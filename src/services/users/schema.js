@@ -19,7 +19,11 @@ const UserSchema = new Schema(
       type: String,
       required: true,
     },
-    img: String,
+    image: {
+      type: String,
+      default:
+        "https://res.cloudinary.com/dsqdewodh/image/upload/v1614369857/WeatherApp/nd9ibbfvl78b7y3p7ire.jpg",
+    },
     favourites: [
       {
         type: new Schema(

@@ -3,27 +3,22 @@ const passport = require("passport");
 const UserModel = require("./schema");
 const { authenticate, refresh } = require("../auth");
 const { authorize } = require("../auth/middlewares");
+const cloudinary = require("../../cloudinary");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const multer = require("multer");
 
 const usersRouter = express.Router();
-//main routes
-usersRouter.get("/", authorize, authenticate, async (req, res, next) => {
-  try {
-    console.log(req.user);
-    const users = await UserModel.find();
-    res.send(users);
-  } catch (error) {
-    next(error);
-  }
-});
+//MAIN ROUTES
 
-usersRouter.get("/me", authenticate, async (req, res, next) => {
+//ROUTE FOR GETTING OWN PROFILE
+usersRouter.get("/me", authorize, async (req, res, next) => {
   try {
     res.send(req.user);
   } catch (error) {
     next(error);
   }
 });
-
+//ROUTE FOR REGISTRATION
 usersRouter.post("/register", async (req, res, next) => {
   try {
     const newUser = new UserModel(req.body);
@@ -34,7 +29,7 @@ usersRouter.post("/register", async (req, res, next) => {
     next(error);
   }
 });
-
+//ROUTE FOR UPDATING OWN PROFILE
 usersRouter.put("/me", authorize, async (req, res, next) => {
   try {
     const updates = Object.keys(req.body);
@@ -45,7 +40,7 @@ usersRouter.put("/me", authorize, async (req, res, next) => {
     next(error);
   }
 });
-
+//ROUTE FOR DELETING OWN PROFILE
 usersRouter.delete("/me", authorize, async (req, res, next) => {
   try {
     await req.user.deleteOne(res.send("Deleted"));
@@ -53,7 +48,7 @@ usersRouter.delete("/me", authorize, async (req, res, next) => {
     next(error);
   }
 });
-
+//ROUTE FOR LOGIN
 usersRouter.post("/login", async (req, res, next) => {
   try {
     //Check credentials
@@ -79,15 +74,13 @@ usersRouter.post("/login", async (req, res, next) => {
     next(error);
   }
 });
-
+//ROUTE FOR REFRESH TOKEN
 usersRouter.get("/refreshToken", async (req, res, next) => {
   try {
     // Grab the refresh token
 
     console.log(req.cookies);
     const oldRefreshToken = req.cookies.refreshToken;
-
-    // Verify the token
 
     // If it's ok generate new access token and new refresh token
 
@@ -100,7 +93,35 @@ usersRouter.get("/refreshToken", async (req, res, next) => {
     next(error);
   }
 });
+//ROUTE FOR UPLOADING IMAGE
+const cloudStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "WeatherApp",
+  },
+});
 
+const cloudinaryMulter = multer({ storage: cloudStorage });
+
+usersRouter.post(
+  "/picture",
+  authorize,
+  cloudinaryMulter.single("image"),
+  async (req, res, next) => {
+    try {
+      const updated = await UserModel.findByIdAndUpdate(
+        req.user._id,
+        { image: req.file.path },
+        { runValidators: true, new: true }
+      );
+      res.status(201).send("Successfully uploaded picture.");
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+//ROUTES FOR SPOTIFY oAuth
+//Login
 usersRouter.get(
   "/spotifyLogin",
   passport.authenticate("spotify", {
@@ -108,7 +129,7 @@ usersRouter.get(
     showDialog: true,
   })
 );
-
+//Redirect
 usersRouter.get(
   "/spotifyRedirect",
   passport.authenticate("spotify"),
@@ -129,11 +150,13 @@ usersRouter.get(
   }
 );
 
+//ROUTES FOR GOOGLE oAuth
+//Login
 usersRouter.get(
   "/googleLogin",
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
-
+//Redirect
 usersRouter.get(
   "/googleRedirect",
   passport.authenticate("google", { failureRedirect: "/login" }),
@@ -153,12 +176,13 @@ usersRouter.get(
     }
   }
 );
-
+//ROUTES FOR FACEBOOK oAuth
+//Login
 usersRouter.get(
   "/facebookLogin",
   passport.authenticate("facebook", { scope: ["public_profile", "email"] })
 );
-
+//Redirect
 usersRouter.get(
   "/facebookRedirect",
   passport.authenticate("facebook", { failureRedirect: "/login" }),
@@ -178,19 +202,54 @@ usersRouter.get(
     }
   }
 );
-
-usersRouter.post("/favourites/add", authorize, async (req, res, next) => {
+//SUB-ROUTES FOR FAVOURITES
+//Get all favourites
+usersRouter.get("/favourites/", authorize, async (req, res, next) => {
   try {
-    const favourite = req.body;
-    await UserModel.findOneAndUpdate(
-      { user: req.user },
-      { $push: { favourites: favourite } },
-      { runValidators: true, new: true }
-    );
-    res.send({ favourite });
+    const user = await UserModel.findById(req.user.id);
+    res.status(200).send(user.favourites);
   } catch (error) {
     console.log(error);
     next(error);
   }
 });
+//Add favourite
+usersRouter.post("/favourites/add", authorize, async (req, res, next) => {
+  try {
+    const favourite = req.body;
+    await UserModel.findByIdAndUpdate(
+      req.user._id,
+      { $push: { favourites: favourite } },
+      { runValidators: true, new: true }
+    );
+    res.send(req.user);
+  } catch (error) {
+    console.log(error);
+    next(error);
+  }
+});
+//Remove Favourite
+usersRouter.delete(
+  "/favourites/remove/:city",
+  authorize,
+  async (req, res, next) => {
+    try {
+      const favourite = await UserModel.findByIdAndUpdate(
+        req.user._id,
+        {
+          $pull: {
+            favourites: { city: req.params.city },
+          },
+        },
+        {
+          new: true,
+        }
+      );
+      res.send(favourite.favourites);
+    } catch (error) {
+      console.log(error);
+      next(error);
+    }
+  }
+);
 module.exports = usersRouter;
